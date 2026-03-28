@@ -1,5 +1,9 @@
+import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import type { CartItem, MenuItem } from "./types";
+import { useYookassa, openPaymentPage } from "@/components/extensions/yookassa/useYookassa";
+
+const YOOKASSA_API_URL = "https://functions.poehali.dev/150b8c8f-7708-4cbb-b720-94541b18477d";
 
 interface CartSidebarProps {
   cart: CartItem[];
@@ -26,6 +30,38 @@ export default function CartSidebar({
   onRemove,
   onOrder,
 }: CartSidebarProps) {
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+
+  const { createPayment, isLoading } = useYookassa({
+    apiUrl: YOOKASSA_API_URL,
+    onError: () => setEmailError("Ошибка при создании платежа. Попробуйте ещё раз."),
+  });
+
+  const handlePay = async () => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailError("Введите корректный email для чека");
+      return;
+    }
+    setEmailError("");
+    const returnUrl = window.location.origin + "/?payment=success";
+    const response = await createPayment({
+      amount: totalPrice,
+      userEmail: email,
+      returnUrl,
+      cartItems: cart.map((item) => ({
+        id: String(item.id),
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+      })),
+    });
+    if (response?.payment_url) {
+      onOrder();
+      openPaymentPage(response.payment_url);
+    }
+  };
+
   return (
     <>
       {/* Sidebar */}
@@ -141,12 +177,25 @@ export default function CartSidebar({
                     <span>Бесплатная доставка включена!</span>
                   </div>
                 )}
+                <div className="space-y-2">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); setEmailError(""); }}
+                    placeholder="Email для чека"
+                    className="w-full bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm font-body text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--gold)/0.5)]"
+                  />
+                  {emailError && (
+                    <p className="text-xs text-red-400 font-body">{emailError}</p>
+                  )}
+                </div>
                 <button
-                  onClick={onOrder}
-                  className="w-full btn-gold py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                  onClick={handlePay}
+                  disabled={isLoading}
+                  className="w-full btn-gold py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                  <Icon name="ShoppingBag" size={16} />
-                  Оформить заказ · {totalPrice.toLocaleString("ru-RU")} ₽
+                  <Icon name="CreditCard" size={16} />
+                  {isLoading ? "Создаём заказ..." : `Оплатить · ${totalPrice.toLocaleString("ru-RU")} ₽`}
                 </button>
               </div>
             )}
